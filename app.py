@@ -2,7 +2,6 @@ import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 from collections import defaultdict, Counter
-import random
 import torch
 
 # ==========================================
@@ -63,10 +62,10 @@ def calculate_compression_ratio(original, summary):
     return round((1 - (sum_len / orig_len)) * 100, 1)
 
 # ==========================================
-# 4. CORE PIPELINE & SMART HEADLINE
+# 4. CORE PIPELINE & MAPPING
 # ==========================================
 def extract_keywords_and_pipeline(text):
-    """Retained purely for the Teacher's Evaluation Tab"""
+    """Retained for the Teacher's Evaluation Tab"""
     text = enforce_hindi_fullstop(text)
     sentences = [s.strip() for s in text.split('।') if len(s.strip()) > 5]
     
@@ -101,28 +100,6 @@ def extract_keywords_and_pipeline(text):
     
     return top_original_keywords[:5], pipeline_steps
 
-def generate_smart_headline(summary):
-    """
-    Dynamically generates a title based on the AI's deep understanding of the text.
-    It takes the first half of the grammatically perfect AI summary and turns it into a cliffhanger.
-    """
-    words = summary.replace('।', '').strip().split()
-    
-    if len(words) > 7:
-        # Dynamically grab the first 6 to 9 words to form a natural hanging sentence
-        slice_index = min(9, max(6, int(len(words) * 0.5)))
-        cliffhanger = " ".join(words[:slice_index])
-        
-        suffixes = [
-            "... : जानिए क्या है पूरी खबर",
-            "... : पढ़ें ताज़ा अपडेट",
-            "... : जानिए इस रिपोर्ट की खास बातें",
-            "... : आखिर क्या है इसके पीछे की वजह?"
-        ]
-        return f"{cliffhanger}{random.choice(suffixes)}"
-    else:
-        # Fallback for extremely short summaries
-        return f"{summary.replace('।', '')} : ताज़ा अपडेट..."
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
     original_text = enforce_hindi_fullstop(original_text)
@@ -157,30 +134,29 @@ st.set_page_config(page_title="Abstractive Hindi Summarizer", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ System Architecture")
-    st.info("**Methodology:** Abstractive Summarization (mT5 Neural Network)")
+    st.info("**Methodology:** Dual-Pass Abstractive Generation (mT5)")
     st.info("**Mapping:** Lexical Overlap highlights the source statements.")
     st.markdown("---")
 
 st.title("🧠 Neural Abstractive Hindi Summarizer")
-st.markdown("Generates AI-written summaries, maps them back to source statements, and evaluates accuracy.")
+st.markdown("Generates AI-written summaries, distinct dynamic headlines, and evaluates accuracy.")
 
 with st.spinner("Initializing Abstractive Model... (Please wait)"):
     tokenizer, model = load_model()
 
 news_input = st.text_area("Paste Hindi News Article Here:", height=180)
 
-if st.button("Generate Abstractive Summary", type="primary"):
+if st.button("Generate AI Summary & Headline", type="primary"):
     if len(news_input.strip()) < 30:
         st.warning("Please enter a longer text for abstractive summarization.")
     else:
-        with st.spinner("AI is reading the news and writing the output..."):
+        with st.spinner("AI is analyzing text to write the summary and headline..."):
             
-            # 1. Pipeline extraction (For teacher evaluation only)
             keywords, pipeline_steps = extract_keywords_and_pipeline(news_input)
-            
-            # 2. AI reads and understands the text to generate the Abstractive Summary FIRST
             inputs = tokenizer(news_input, return_tensors="pt", max_length=512, truncation=True)
+            
             with torch.no_grad():
+                # PASS 1: Generate the full Abstractive Summary
                 summary_ids = model.generate(
                     inputs["input_ids"], 
                     max_length=120, 
@@ -189,14 +165,27 @@ if st.button("Generate Abstractive Summary", type="primary"):
                     num_beams=4,
                     early_stopping=True
                 )
+                
+                # PASS 2: Generate the Distinct AI Headline (Forcing a shorter output)
+                title_ids = model.generate(
+                    inputs["input_ids"], 
+                    max_length=18, 
+                    min_length=5, 
+                    length_penalty=0.5, # Low penalty forces brevity
+                    num_beams=4,
+                    early_stopping=True
+                )
             
+            # Decode the summary
             abstract_summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
             abstract_summary = enforce_hindi_fullstop(abstract_summary)
             
-            # 3. Derive the Smart Title directly from the AI's contextual understanding
-            title = generate_smart_headline(abstract_summary)
+            # Decode and format the title
+            raw_ai_title = tokenizer.decode(title_ids[0], skip_special_tokens=True)
+            raw_ai_title = raw_ai_title.replace('।', '').strip()
+            final_title = f"{raw_ai_title}... : जानिए पूरी खबर"
             
-            # 4. Accuracy & Mapping
+            # Accuracy & Mapping
             highlighted_original = highlight_source_statements(news_input, abstract_summary)
             precision, recall, f1_score = calculate_rouge_1(abstract_summary, news_input)
             compression = calculate_compression_ratio(news_input, abstract_summary)
@@ -206,7 +195,7 @@ if st.button("Generate Abstractive Summary", type="primary"):
             tab1, tab2, tab3 = st.tabs(["📊 Final Output", "⚙️ NLP Pipeline (Evaluation)", "📈 Accuracy & Metrics"])
             
             with tab1:
-                st.markdown(f"<h3 style='color: #ef4444;'>{title}</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='color: #ef4444;'>{final_title}</h3>", unsafe_allow_html=True)
                 st.write("")
                 
                 col1, col2 = st.columns(2)
@@ -220,7 +209,6 @@ if st.button("Generate Abstractive Summary", type="primary"):
 
             with tab2:
                 st.markdown("### Preprocessing Pipeline (System Evaluation)")
-                st.markdown("The system still runs classic NLP tokenization and stemming to extract core entities for evaluation:")
                 if pipeline_steps:
                     st.code(f"1. Original Sentence: {pipeline_steps['sentence']}", language="text")
                     st.code(f"2. Tokenization: {pipeline_steps['tokens']}", language="python")
