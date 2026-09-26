@@ -2,6 +2,7 @@ import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 from collections import defaultdict, Counter
+import random
 import torch
 
 # ==========================================
@@ -62,10 +63,9 @@ def calculate_compression_ratio(original, summary):
     return round((1 - (sum_len / orig_len)) * 100, 1)
 
 # ==========================================
-# 4. CORE PIPELINE & MAPPING
+# 4. CORE PIPELINE & SMART HEADLINE
 # ==========================================
 def extract_keywords_and_pipeline(text):
-    """Retained for the Teacher's Evaluation Tab"""
     text = enforce_hindi_fullstop(text)
     sentences = [s.strip() for s in text.split('।') if len(s.strip()) > 5]
     
@@ -100,6 +100,31 @@ def extract_keywords_and_pipeline(text):
     
     return top_original_keywords[:5], pipeline_steps
 
+def generate_smart_headline(summary):
+    """
+    Intelligently slices the summary at a natural grammatical pause 
+    (like a comma) to avoid breaking words in half.
+    """
+    # Split by comma first to find a natural clause
+    clauses = summary.split(',')
+    
+    if len(clauses) > 1 and len(clauses[0].split()) >= 3:
+        base_title = clauses[0].strip()
+    else:
+        # Fallback: grab exactly the first 6 whole words
+        words = summary.replace('।', '').split()
+        base_title = " ".join(words[:6])
+        
+    # Strip any dangling connector words at the end of the slice
+    base_title = re.sub(r'\s+(और|तथा|में|से|को|के)$', '', base_title)
+    
+    suffixes = [
+        "जानिए क्या है पूरी खबर",
+        "पढ़ें ताज़ा अपडेट",
+        "जानिए इस रिपोर्ट की खास बातें"
+    ]
+    
+    return f"{base_title}... : {random.choice(suffixes)}"
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
     original_text = enforce_hindi_fullstop(original_text)
@@ -134,12 +159,12 @@ st.set_page_config(page_title="Abstractive Hindi Summarizer", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ System Architecture")
-    st.info("**Methodology:** Dual-Pass Abstractive Generation (mT5)")
+    st.info("**Methodology:** Abstractive Summarization (mT5 Neural Network)")
     st.info("**Mapping:** Lexical Overlap highlights the source statements.")
     st.markdown("---")
 
 st.title("🧠 Neural Abstractive Hindi Summarizer")
-st.markdown("Generates AI-written summaries, distinct dynamic headlines, and evaluates accuracy.")
+st.markdown("Generates AI-written summaries, extracts dynamic headlines, and evaluates accuracy.")
 
 with st.spinner("Initializing Abstractive Model... (Please wait)"):
     tokenizer, model = load_model()
@@ -147,43 +172,31 @@ with st.spinner("Initializing Abstractive Model... (Please wait)"):
 news_input = st.text_area("Paste Hindi News Article Here:", height=180)
 
 if st.button("Generate AI Summary & Headline", type="primary"):
-    if len(news_input.strip()) < 30:
+    if len(news_input.strip()) < 50:
         st.warning("Please enter a longer text for abstractive summarization.")
     else:
-        with st.spinner("AI is analyzing text to write the summary and headline..."):
+        with st.spinner("AI is analyzing text to write a detailed summary..."):
             
             keywords, pipeline_steps = extract_keywords_and_pipeline(news_input)
-            inputs = tokenizer(news_input, return_tensors="pt", max_length=512, truncation=True)
+            inputs = tokenizer(news_input, return_tensors="pt", max_length=1024, truncation=True)
             
             with torch.no_grad():
-                # PASS 1: Generate the full Abstractive Summary
+                # Adjusted parameters to force a significantly longer summary
                 summary_ids = model.generate(
                     inputs["input_ids"], 
-                    max_length=120, 
-                    min_length=25, 
-                    length_penalty=1.5, 
-                    num_beams=4,
-                    early_stopping=True
-                )
-                
-                # PASS 2: Generate the Distinct AI Headline (Forcing a shorter output)
-                title_ids = model.generate(
-                    inputs["input_ids"], 
-                    max_length=18, 
-                    min_length=5, 
-                    length_penalty=0.5, # Low penalty forces brevity
-                    num_beams=4,
+                    max_length=200, 
+                    min_length=60,            # High minimum length forces more detail
+                    length_penalty=2.5,       # High penalty encourages longer sentences
+                    num_beams=6,              # Broader search for better context
+                    no_repeat_ngram_size=3,   # Prevents it from repeating the same sentence to hit the min_length
                     early_stopping=True
                 )
             
-            # Decode the summary
             abstract_summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
             abstract_summary = enforce_hindi_fullstop(abstract_summary)
             
-            # Decode and format the title
-            raw_ai_title = tokenizer.decode(title_ids[0], skip_special_tokens=True)
-            raw_ai_title = raw_ai_title.replace('।', '').strip()
-            final_title = f"{raw_ai_title}... : जानिए पूरी खबर"
+            # Generate title safely based on the final text
+            final_title = generate_smart_headline(abstract_summary)
             
             # Accuracy & Mapping
             highlighted_original = highlight_source_statements(news_input, abstract_summary)
