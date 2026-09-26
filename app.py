@@ -108,11 +108,12 @@ def generate_intriguing_title(keywords):
         templates = [
             f"'{keywords[0]}' और '{keywords[1]}': जानिए मामले से जुड़ी मुख्य बातें...",
             f"'{keywords[0]}' को लेकर '{keywords[1]}' में हलचल: स्थिति पर एक नज़र...",
-            f"ताज़ा अपडेट: '{keywords[0]}' और '{keywords[1]}' पर क्या हैं ताज़ा हालात...?"
+            f"ताज़ा अपडेट: '{keywords[0]}' और '{keywords[1]}' पर क्या हैं मौजूदा हालात...?",
+            f"विशेष रिपोर्ट: '{keywords[0]}' और '{keywords[1]}' की जमीनी हकीकत..."
         ]
         return random.choice(templates)
     elif len(keywords) == 1:
-        return f"'{keywords[0]}' से जुड़ी मुख्य बातें: जानिए इस रिपोर्ट में..."
+        return f"'{keywords[0]}' से जुड़ी मुख्य बातें: जानिए इस खास रिपोर्ट में..."
     return "ताज़ा ख़बर: घटना से जुड़े मुख्य बिंदु..."
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
