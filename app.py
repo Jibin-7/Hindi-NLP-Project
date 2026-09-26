@@ -2,7 +2,6 @@ import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 from collections import defaultdict, Counter
-import random
 import torch
 
 # ==========================================
@@ -102,29 +101,18 @@ def extract_keywords_and_pipeline(text):
 
 def generate_smart_headline(summary):
     """
-    Intelligently slices the summary at a natural grammatical pause 
-    (like a comma) to avoid breaking words in half.
+    Creates a highly natural news headline by taking the AI's first complete sentence
+    and applying standard Hindi journalistic formatting (dropping final auxiliary verbs).
     """
-    # Split by comma first to find a natural clause
-    clauses = summary.split(',')
+    # 1. Extract the first complete sentence from the AI summary
+    first_sentence = summary.split('।')[0].strip()
     
-    if len(clauses) > 1 and len(clauses[0].split()) >= 3:
-        base_title = clauses[0].strip()
-    else:
-        # Fallback: grab exactly the first 6 whole words
-        words = summary.replace('।', '').split()
-        base_title = " ".join(words[:6])
-        
-    # Strip any dangling connector words at the end of the slice
-    base_title = re.sub(r'\s+(और|तथा|में|से|को|के)$', '', base_title)
+    # 2. Strip conversational endings that aren't used in bold headlines
+    # Example: "अलर्ट जारी किया गया है" becomes "अलर्ट जारी किया गया"
+    headline = re.sub(r'\s+(है|हैं|था|थे|थी)$', '', first_sentence)
     
-    suffixes = [
-        "जानिए क्या है पूरी खबर",
-        "पढ़ें ताज़ा अपडेट",
-        "जानिए इस रिपोर्ट की खास बातें"
-    ]
-    
-    return f"{base_title}... : {random.choice(suffixes)}"
+    # 3. Add a journalistic prefix if desired (keeping it clean)
+    return f"ब्रेकिंग न्यूज़: {headline}"
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
     original_text = enforce_hindi_fullstop(original_text)
@@ -164,7 +152,7 @@ with st.sidebar:
     st.markdown("---")
 
 st.title("🧠 Neural Abstractive Hindi Summarizer")
-st.markdown("Generates AI-written summaries, extracts dynamic headlines, and evaluates accuracy.")
+st.markdown("Generates AI-written summaries, extracts natural headlines, and evaluates accuracy.")
 
 with st.spinner("Initializing Abstractive Model... (Please wait)"):
     tokenizer, model = load_model()
@@ -181,24 +169,21 @@ if st.button("Generate AI Summary & Headline", type="primary"):
             inputs = tokenizer(news_input, return_tensors="pt", max_length=1024, truncation=True)
             
             with torch.no_grad():
-                # Adjusted parameters to force a significantly longer summary
                 summary_ids = model.generate(
                     inputs["input_ids"], 
                     max_length=200, 
-                    min_length=60,            # High minimum length forces more detail
-                    length_penalty=2.5,       # High penalty encourages longer sentences
-                    num_beams=6,              # Broader search for better context
-                    no_repeat_ngram_size=3,   # Prevents it from repeating the same sentence to hit the min_length
+                    min_length=60,            
+                    length_penalty=2.5,       
+                    num_beams=6,              
+                    no_repeat_ngram_size=3,   
                     early_stopping=True
                 )
             
             abstract_summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
             abstract_summary = enforce_hindi_fullstop(abstract_summary)
             
-            # Generate title safely based on the final text
             final_title = generate_smart_headline(abstract_summary)
             
-            # Accuracy & Mapping
             highlighted_original = highlight_source_statements(news_input, abstract_summary)
             precision, recall, f1_score = calculate_rouge_1(abstract_summary, news_input)
             compression = calculate_compression_ratio(news_input, abstract_summary)
