@@ -6,13 +6,12 @@ import random
 import torch
 
 # ==========================================
-# 1. LOAD ABSTRACTIVE AI MODEL (Memory Optimized for Cloud)
+# 1. LOAD ABSTRACTIVE AI MODEL
 # ==========================================
 @st.cache_resource(show_spinner=False)
 def load_model():
     model_name = "csebuetnlp/mT5_multilingual_XLSum"
     tokenizer = AutoTokenizer.from_pretrained(model_name, legacy=False)
-    # low_cpu_mem_usage helps prevent crashes on free cloud tiers
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name, low_cpu_mem_usage=True)
     return tokenizer, model
 
@@ -43,14 +42,12 @@ def enforce_hindi_fullstop(text):
 # 3. ACCURACY & EVALUATION LOGIC
 # ==========================================
 def calculate_rouge_1(system_summary, reference_text):
-    """Pure Python implementation of ROUGE-1 (Unigram Overlap) to avoid heavy libraries"""
     sys_tokens = [w for w in clean_text(system_summary).split() if w not in HINDI_STOPWORDS]
     ref_tokens = [w for w in clean_text(reference_text).split() if w not in HINDI_STOPWORDS]
     
     sys_counter = Counter(sys_tokens)
     ref_counter = Counter(ref_tokens)
     
-    # Calculate word overlap
     overlap = sum((sys_counter & ref_counter).values())
     
     precision = overlap / len(sys_tokens) if len(sys_tokens) > 0 else 0
@@ -66,9 +63,10 @@ def calculate_compression_ratio(original, summary):
     return round((1 - (sum_len / orig_len)) * 100, 1)
 
 # ==========================================
-# 4. CORE PIPELINE
+# 4. CORE PIPELINE & SMART HEADLINE
 # ==========================================
 def extract_keywords_and_pipeline(text):
+    """Retained purely for the Teacher's Evaluation Tab"""
     text = enforce_hindi_fullstop(text)
     sentences = [s.strip() for s in text.split('।') if len(s.strip()) > 5]
     
@@ -103,20 +101,28 @@ def extract_keywords_and_pipeline(text):
     
     return top_original_keywords[:5], pipeline_steps
 
-def generate_intriguing_title(keywords):
-    if len(keywords) >= 2:
-        k1, k2 = keywords[0], keywords[1]
-        templates = [
-            f"'{k1}' और '{k2}' को लेकर बड़ी खबर, जानिए क्या है पूरा मामला...",
-            f"सुर्खियों में '{k1}' और '{k2}': आखिर क्या है इसके पीछे की वजह?",
-            f"'{k1}' और '{k2}' का मुद्दा गरमाया: जानिए इस रिपोर्ट की खास बातें...",
-            f"'{k1}' और '{k2}' के बीच क्या चल रहा है? पढ़ें ये विशेष रिपोर्ट...",
-            f"'{k1}' - '{k2}' विवाद पर ताज़ा अपडेट: आखिर क्या है असली सच्चाई?"
+def generate_smart_headline(summary):
+    """
+    Dynamically generates a title based on the AI's deep understanding of the text.
+    It takes the first half of the grammatically perfect AI summary and turns it into a cliffhanger.
+    """
+    words = summary.replace('।', '').strip().split()
+    
+    if len(words) > 7:
+        # Dynamically grab the first 6 to 9 words to form a natural hanging sentence
+        slice_index = min(9, max(6, int(len(words) * 0.5)))
+        cliffhanger = " ".join(words[:slice_index])
+        
+        suffixes = [
+            "... : जानिए क्या है पूरी खबर",
+            "... : पढ़ें ताज़ा अपडेट",
+            "... : जानिए इस रिपोर्ट की खास बातें",
+            "... : आखिर क्या है इसके पीछे की वजह?"
         ]
-        return random.choice(templates)
-    elif len(keywords) == 1:
-        return f"'{keywords[0]}' के मुद्दे पर गरमाई बहस: जानिए क्या है पूरी कहानी..."
-    return "आज की सबसे बड़ी खबर: जानिए इस अहम घटनाक्रम के मुख्य बिंदु..."
+        return f"{cliffhanger}{random.choice(suffixes)}"
+    else:
+        # Fallback for extremely short summaries
+        return f"{summary.replace('।', '')} : ताज़ा अपडेट..."
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
     original_text = enforce_hindi_fullstop(original_text)
@@ -167,16 +173,13 @@ if st.button("Generate Abstractive Summary", type="primary"):
     if len(news_input.strip()) < 30:
         st.warning("Please enter a longer text for abstractive summarization.")
     else:
-        with st.spinner("AI is analyzing and rewriting the text..."):
+        with st.spinner("AI is reading the news and writing the output..."):
             
-            # 1. Title Generation
+            # 1. Pipeline extraction (For teacher evaluation only)
             keywords, pipeline_steps = extract_keywords_and_pipeline(news_input)
-            title = generate_intriguing_title(keywords)
             
-            # 2. Abstractive Generation 
+            # 2. AI reads and understands the text to generate the Abstractive Summary FIRST
             inputs = tokenizer(news_input, return_tensors="pt", max_length=512, truncation=True)
-            
-            # torch.no_grad() prevents memory leaks on the cloud server during generation
             with torch.no_grad():
                 summary_ids = model.generate(
                     inputs["input_ids"], 
@@ -190,7 +193,10 @@ if st.button("Generate Abstractive Summary", type="primary"):
             abstract_summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
             abstract_summary = enforce_hindi_fullstop(abstract_summary)
             
-            # 3. Accuracy & Mapping
+            # 3. Derive the Smart Title directly from the AI's contextual understanding
+            title = generate_smart_headline(abstract_summary)
+            
+            # 4. Accuracy & Mapping
             highlighted_original = highlight_source_statements(news_input, abstract_summary)
             precision, recall, f1_score = calculate_rouge_1(abstract_summary, news_input)
             compression = calculate_compression_ratio(news_input, abstract_summary)
@@ -213,13 +219,14 @@ if st.button("Generate Abstractive Summary", type="primary"):
                     st.markdown(f"<div style='line-height: 1.8; padding: 10px;'>{highlighted_original}</div>", unsafe_allow_html=True)
 
             with tab2:
-                st.markdown("### Preprocessing Pipeline & Keyword Extraction")
+                st.markdown("### Preprocessing Pipeline (System Evaluation)")
+                st.markdown("The system still runs classic NLP tokenization and stemming to extract core entities for evaluation:")
                 if pipeline_steps:
                     st.code(f"1. Original Sentence: {pipeline_steps['sentence']}", language="text")
                     st.code(f"2. Tokenization: {pipeline_steps['tokens']}", language="python")
                     st.code(f"3. Stopwords Removed: {pipeline_steps['no_stopwords']}", language="python")
                     st.code(f"4. Stemming Applied: {pipeline_steps['stemmed']}", language="python")
-                    st.info(f"**Top Extracted Keywords for Title:** {', '.join(keywords)}")
+                    st.info(f"**Top Extracted Core Entities:** {', '.join(keywords)}")
                     
             with tab3:
                 st.markdown("### System Accuracy & ROUGE Evaluation")
