@@ -105,16 +105,18 @@ def extract_keywords_and_pipeline(text):
 
 def generate_intriguing_title(keywords):
     if len(keywords) >= 2:
+        k1, k2 = keywords[0], keywords[1]
         templates = [
-            f"'{keywords[0]}' और '{keywords[1]}': जानिए मामले से जुड़ी मुख्य बातें...",
-            f"'{keywords[0]}' को लेकर '{keywords[1]}' में हलचल: स्थिति पर एक नज़र...",
-            f"ताज़ा अपडेट: '{keywords[0]}' और '{keywords[1]}' पर क्या हैं मौजूदा हालात...?",
-            f"विशेष रिपोर्ट: '{keywords[0]}' और '{keywords[1]}' की जमीनी हकीकत..."
+            f"'{k1}' और '{k2}' को लेकर बड़ी खबर, जानिए क्या है पूरा मामला...",
+            f"सुर्खियों में '{k1}' और '{k2}': आखिर क्या है इसके पीछे की वजह?",
+            f"'{k1}' और '{k2}' का मुद्दा गरमाया: जानिए इस रिपोर्ट की खास बातें...",
+            f"'{k1}' और '{k2}' के बीच क्या चल रहा है? पढ़ें ये विशेष रिपोर्ट...",
+            f"'{k1}' - '{k2}' विवाद पर ताज़ा अपडेट: आखिर क्या है असली सच्चाई?"
         ]
         return random.choice(templates)
     elif len(keywords) == 1:
-        return f"'{keywords[0]}' से जुड़ी मुख्य बातें: जानिए इस खास रिपोर्ट में..."
-    return "ताज़ा ख़बर: घटना से जुड़े मुख्य बिंदु..."
+        return f"'{keywords[0]}' के मुद्दे पर गरमाई बहस: जानिए क्या है पूरी कहानी..."
+    return "आज की सबसे बड़ी खबर: जानिए इस अहम घटनाक्रम के मुख्य बिंदु..."
 
 def highlight_source_statements(original_text, abstract_summary, top_percent=0.4):
     original_text = enforce_hindi_fullstop(original_text)
